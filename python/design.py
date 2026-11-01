@@ -10,7 +10,7 @@ f_pass = 4000
 f_stop = 6000
 N = 41
 
-# FIR Filter
+# FIR Filter (Parks-McClellan Method)
 h = signal.remez(N, [0, f_pass, f_stop, fs/2], [1,0], 
                 weight = [1,10], fs=fs)
 print(h)
@@ -28,7 +28,8 @@ print(f"Taps: {N}")
 print(f"Passband ripple: {ripple_db} dB")
 print(f"Stopband attentuation: {atten_db} dB")
 
-if ripple_db < 1 and atten_db >= 40: # Gain stays w/in +-6% of ideal AND Unwanted freqs are shrunk to 1/100 size
+# Gain stays w/in +-6% of ideal AND Unwanted freqs are shrunk to 1/100 size
+if ripple_db < 1 and atten_db >= 40: 
     print("PASS!")
 else:
     print("FAIL")
@@ -38,6 +39,10 @@ plt.plot(w, 20*np.log10(np.abs(H) + 1e-12))
 plt.xlabel("Frequency (Hz)")
 plt.ylabel("Magnitude (dB)")
 plt.grid(True)
+plt.axvline(f_pass, color="g", linestyle="--", label="passband edge")
+plt.axvline(f_stop, color="r", linestyle="--", label="stopband edge")
+plt.axhline(-40, color="gray", linestyle=":", label="-40 dB limit")
+plt.legend()
 
 plt.savefig("../results/ideal_response.png")
 np.save("h_float.npy", h)
