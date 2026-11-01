@@ -38,6 +38,8 @@ else:
 plt.plot(w, 20*np.log10(np.abs(H) + 1e-12))
 plt.xlabel("Frequency (Hz)")
 plt.ylabel("Magnitude (dB)")
+plt.title("Ideal floating-point FIR Filter (N=41)")
+plt.ylim(-80, 5)
 plt.grid(True)
 plt.axvline(f_pass, color="g", linestyle="--", label="passband edge")
 plt.axvline(f_stop, color="r", linestyle="--", label="stopband edge")
