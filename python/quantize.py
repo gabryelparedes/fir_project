@@ -11,7 +11,7 @@ f_stop = 6000
 
 h = np.load("h_float.npy")
 
-# Quantize coefficients to B bits
+# Quantize coefficients to B bits to closer model hardware
 def quantize(h, B):
     top = 2**(B - 1) - 1 # Largest B bit value
     F = int(np.floor(np.log2(top / np.max(np.abs(h))))) # Num times to double coefficients
@@ -28,6 +28,17 @@ def check(h_q):
     atten = -20 * np.log10(stopBand.max())
     return w, mag, ripple, atten
 
+# Bit-exact integer FIR: what fir.v should output
+def fir_fixed(x_int, h_int, F):
+    acc = np.convolve(x_int.astype(np.int64), h_int.astype(np.int64))[:len(x_int)]
+    return acc >> F   # arithmetic shift = Verilog >>>
+
+# One value per line, two's-complement hex, for $readmemh
+def export_mem(vals, B, path):
+    digits = (B + 3) // 4
+    with open(path, "w") as f:
+        for v in vals:
+            f.write(f"{int(v) & (2**B - 1):0{digits}x}\n")
 
 bit_widths = [16, 12, 10, 8, 6]
 
@@ -60,3 +71,4 @@ plt.grid(True)
 plt.legend()
 plt.tight_layout()
 plt.savefig("../results/quantized_responses.png")
+
