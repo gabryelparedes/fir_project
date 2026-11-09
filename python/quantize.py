@@ -72,3 +72,30 @@ plt.legend()
 plt.tight_layout()
 plt.savefig("../results/quantized_responses.png")
 
+# Test vectors for verilog
+import os
+os.makedirs("../vectors", exist_ok=True)
+
+B_COEF = 16   # coefficient bits for the hardware build
+B_X = 16      # input sample bits (Q1.15)
+
+h_int, F = quantize(h, B_COEF)   # re-quantize at 16 bits (the loop left 6-bit values)
+export_mem(h_int, B_COEF, "../vectors/coeffs.mem")
+with open("../vectors/params.txt", "w") as f:
+    f.write(f"B_COEF={B_COEF}\nB_X={B_X}\nF={F}\nN={len(h_int)}\n")
+
+# Test input: impulse, then two tones, then random noise
+rng = np.random.default_rng(0)
+n = np.arange(500)
+impulse = np.zeros(100); impulse[0] = 0.5
+tones = 0.45*np.sin(2*np.pi*1000*n/fs) + 0.45*np.sin(2*np.pi*10000*n/fs)
+noise = rng.uniform(-0.9, 0.9, 500)
+x = np.concatenate([impulse, tones, noise])
+
+top_x = 2**(B_X - 1) - 1
+x_int = np.clip(np.round(x * 2**(B_X - 1)), -top_x - 1, top_x).astype(np.int64)
+
+y_int = fir_fixed(x_int, h_int, F)
+export_mem(x_int, B_X, "../vectors/input.mem")
+np.savetxt("../vectors/expected.txt", y_int, fmt="%d")
+print(f"Wrote test vectors to ../vectors/  (F={F})")
