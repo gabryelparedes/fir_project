@@ -1,0 +1,70 @@
+// fir.v -- 41-tap direct-form FIR, one sample per clock
+//
+// Math (matches fir_fixed() in Python, bit for bit):
+//   acc[n] = sum_{k=0}^{N-1} coef[k] * x[n-k]      (full precision)
+//   y[n]   = acc[n] >>> F                          (arithmetic shift = truncate toward -inf)
+//
+// Widths:
+//   x      : B_X-bit signed, Q1.15  (value = x_int / 2^15)
+//   coef   : B_COEF-bit signed, scaled by 2^F
+//   acc    : needs 34 bits worst case (2^15 * sum|coef| < 2^33) -> 36 for margin
+//   y_out  : ACC_W - F = 19 bits, so the ~1.6x worst-case gain can't overflow
+//
+// Timing: y_out for sample x[n] appears one clock after x[n] is presented
+// with in_valid high.
+
+module fir #(
+    parameter N         = 41,
+    parameter B_X       = 16,
+    parameter B_COEF    = 16,
+    parameter F         = 17,              // from params.txt
+    parameter ACC_W     = 36,
+    parameter OUT_W     = ACC_W - F,
+    parameter COEF_FILE = "vectors/coeffs.mem"
+)(
+    input  wire                     clk,
+    input  wire                     rst,       // synchronous, active high
+    input  wire                     in_valid,
+    input  wire signed [B_X-1:0]    x_in,
+    output reg                      out_valid,
+    output reg  signed [OUT_W-1:0]  y_out
+);
+
+    // Coefficient ROM, loaded from Python's export
+    reg signed [B_COEF-1:0] coef [0:N-1];
+    initial $readmemh(COEF_FILE, coef);
+
+    // Delay line: dly[0] = x[n-1], dly[1] = x[n-2], ..., dly[N-2] = x[n-N+1]
+    reg signed [B_X-1:0] dly [0:N-2];
+
+    // Multiply-accumulate (combinational)
+    // Every operand is signed and the result is ACC_W bits wide, so Verilog
+    // sign-extends each product to ACC_W bits before adding.
+    integer k;
+    reg signed [ACC_W-1:0] acc;
+    always @* begin
+        acc = x_in * coef[0];                       // k = 0 term uses x[n] itself
+        for (k = 1; k < N; k = k + 1)
+            acc = acc + dly[k-1] * coef[k];
+    end
+
+    // Register output, shift delay line
+    integer i;
+    always @(posedge clk) begin
+        if (rst) begin
+            out_valid <= 1'b0;
+            y_out     <= {OUT_W{1'b0}};
+            for (i = 0; i < N-1; i = i + 1)
+                dly[i] <= {B_X{1'b0}};
+        end else begin
+            out_valid <= in_valid;
+            if (in_valid) begin
+                y_out  <= acc >>> F;                // acc is signed -> arithmetic shift
+                dly[0] <= x_in;
+                for (i = 1; i < N-1; i = i + 1)
+                    dly[i] <= dly[i-1];
+            end
+        end
+    end
+
+endmodule
