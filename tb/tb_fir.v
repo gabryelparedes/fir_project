@@ -18,7 +18,7 @@ module tb_fir;
 
     reg signed [15:0] x_mem [0:N_SAMPLES-1];
     integer expected [0:N_SAMPLES-1];
-    integer fd, n, r, errors, checked;
+    integer fd, fout, n, r, errors, checked;
 
     initial begin
         $readmemh("vectors/input.mem", x_mem);
@@ -46,6 +46,7 @@ module tb_fir;
         @(posedge clk);
         in_valid <= 0;
         repeat (3) @(posedge clk);
+        $fclose(fout);
 
         if (checked != N_SAMPLES)
             $display("FAIL: only checked %0d of %0d outputs", checked, N_SAMPLES);
@@ -60,6 +61,7 @@ module tb_fir;
     initial begin errors = 0; checked = 0; end
     always @(posedge clk) begin
         if (out_valid) begin
+            $fdisplay(fout, "%0d", y_out);
             if (y_out !== expected[checked]) begin
                 errors = errors + 1;
                 if (errors <= 10)
