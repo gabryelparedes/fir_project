@@ -28,6 +28,9 @@ module tb_fir;
             r = $fscanf(fd, "%d\n", expected[n]);
         $fclose(fd);
 
+        // Creates file for hardware output comparisons with py
+        fout = $fopen("vectors/actual.txt", "w");
+
         $dumpfile("fir.vcd");
         $dumpvars(0, tb_fir);
 
