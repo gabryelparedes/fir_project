@@ -19,7 +19,9 @@ module fir #(
     parameter B_COEF    = 16,
     parameter F         = 17,              // from params.txt
     parameter ACC_W     = 36,
-    parameter OUT_W     = ACC_W - F,
+    parameter OUT_W     = ACC_W - F,       // must be <= ACC_W - F
+    parameter ROUND = 0,                   // 0 = truncate, 1 = round half up
+    parameter SAT = 0,                     // 0 = wrap around, 1 = saturate
     parameter COEF_FILE = "vectors/coeffs.mem"
 )(
     input  wire                     clk,
@@ -29,6 +31,8 @@ module fir #(
     output reg                      out_valid,
     output reg  signed [OUT_W-1:0]  y_out
 );
+
+    localparam SH_W = ACC_W - F; // width left after shift (19)
 
     // Coefficient ROM, loaded from Python's export
     reg signed [B_COEF-1:0] coef [0:N-1];
@@ -47,6 +51,16 @@ module fir #(
         for (k = 1; k < N; k = k + 1)
             acc = acc + dly[k-1] * coef[k];
     end
+
+    wire [SH_W-OUT_W:0] top  = sh[SH_W-1:OUT_W-1];
+    wire                fits = (&top) | ~(|top);
+
+    localparam signed [OUT_W-1:0] MAX_OUT = {1'b0, {(OUT_W-1){1'b1}}};  // 0111...1
+    localparam signed [OUT_W-1:0] MIN_OUT = {1'b1, {(OUT_W-1){1'b0}}};  // 1000...0
+
+    wire signed [OUT_W-1:0] y_next =
+        (!SAT || fits) ? sh[OUT_W-1:0]                 // wrap: keep the low bits
+                       : (sh[SH_W-1] ? MIN_OUT : MAX_OUT);  // clamp, by sign
 
     // Register output, shift delay line
     integer i;
