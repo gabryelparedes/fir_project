@@ -6,41 +6,43 @@ module tb_fir;
     parameter ROUND     = 0;         // 0 = truncate, 1 = round half up
     parameter SAT = 0;               // 0 = wrap around, 1 = saturate
 
-    reg                     clk = 0, rst = 1, in_valid = 0;
+    // Filter setup
+    reg                     clk = 0, rst = 1, in_valid = 0; 
     reg  signed [15:0]      x_in = 0;
     wire                    out_valid;
     wire signed [OUT_W-1:0] y_out;
 
-    // Setup filter
+    // Setup filter to spec
     fir #(.OUT_W(OUT_W), .ROUND(ROUND), .SAT(SAT)) dut (
         .clk(clk), .rst(rst), .in_valid(in_valid), .x_in(x_in),
         .out_valid(out_valid), .y_out(y_out));
 
-    always #5 clk = ~clk;   
+    always #5 clk = ~clk; // flip ev 5 ns
 
-    reg signed [15:0] x_mem [0:N_SAMPLES-1];
-    integer expected [0:N_SAMPLES-1];
+    // Declare storage
+    reg signed [15:0] x_mem [0:N_SAMPLES-1]; 
+    integer expected [0:N_SAMPLES-1]; // golden-model outputs
     integer fd, fout, n, r, errors, checked;
-    reg [8*256-1:0] exp_file, act_file;     
+    reg [8*256-1:0] exp_file, act_file;
 
-    initial begin
+    initial begin // runs once @ t = 0
         if (!$value$plusargs("EXP=%s", exp_file)) exp_file = "vectors/expected.txt";
         if (!$value$plusargs("ACT=%s", act_file)) act_file = "vectors/actual.txt";
 
-        $readmemh("vectors/input.mem", x_mem);
+        $readmemh("vectors/input.mem", x_mem); // load input samples
         fd = $fopen(exp_file, "r");
-        if (fd == 0) begin $display("Can't open %0s", exp_file); $finish; end
+        if (fd == 0) begin $display("Can't open %0s", exp_file); $finish; end // error: missing file
         for (n = 0; n < N_SAMPLES; n = n + 1)
-            r = $fscanf(fd, "%d\n", expected[n]);
+            r = $fscanf(fd, "%d\n", expected[n]); // compare exp to act vals
         $fclose(fd);
 
         fout = $fopen(act_file, "w");
 
-        $dumpfile("fir.vcd");
-        $dumpvars(0, tb_fir);
+        $dumpfile("fir.vcd"); // waveform file for GTKwave
+        $dumpvars(0, tb_fir); // record all signals
 
-        repeat (2) @(posedge clk);
-        rst <= 0;
+        repeat (2) @(posedge clk); // wait 2 rising edges
+        rst <= 0; // release reset
 
         for (n = 0; n < N_SAMPLES; n = n + 1) begin
             @(posedge clk);
@@ -49,9 +51,10 @@ module tb_fir;
         end
         @(posedge clk);
         in_valid <= 0;
-        repeat (3) @(posedge clk);
+        repeat (3) @(posedge clk); // wait for stragglers
         $fclose(fout);
 
+        // The  report
         $write("[OUT_W=%0d ROUND=%0d SAT=%0d] ", OUT_W, ROUND, SAT);
         if (checked != N_SAMPLES)
             $display("FAIL: only checked %0d of %0d outputs", checked, N_SAMPLES);
@@ -62,6 +65,7 @@ module tb_fir;
         $finish;
     end
 
+    // Errors
     initial begin errors = 0; checked = 0; end
     always @(posedge clk) begin
         if (out_valid) begin

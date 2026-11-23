@@ -31,13 +31,13 @@ module fir #(
             acc = acc + dly[k-1] * coef[k]; // add x[n-k] * h[k]
     end
 
-    // rounding
+    // Rounding
     localparam [ACC_W-1:0] HALF = ROUND ? ({{(ACC_W-1){1'b0}}, 1'b1} << (F-1))
                                         : {ACC_W{1'b0}};
     wire signed [ACC_W-1:0] acc_r = acc + $signed(HALF); 
     wire signed [SH_W-1:0]  sh    = acc_r >>> F; // must be signed
 
-    // overflow check
+    // Overflow check
     wire [SH_W-OUT_W:0] top  = sh[SH_W-1:OUT_W-1]; // grabs 1st 4 bits
     wire                fits = (&top) | ~(|top); // all 1's or no 1's
 
