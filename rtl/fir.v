@@ -2,13 +2,16 @@
 //
 // Math (matches fir_fixed() in Python, bit for bit):
 //   acc[n] = sum_{k=0}^{N-1} coef[k] * x[n-k]      (full precision)
-//   y[n]   = acc[n] >>> F                          (arithmetic shift = truncate toward -inf)
+//   y[n]   = (acc[n] + half) >>> F                 (half = 2^(F-1) if ROUND, else 0)
+//   then fit y[n] into OUT_W bits: wrap around, or clamp if SAT
 //
 // Widths:
 //   x      : B_X-bit signed, Q1.15  (value = x_int / 2^15)
 //   coef   : B_COEF-bit signed, scaled by 2^F
 //   acc    : needs 34 bits worst case (2^15 * sum|coef| < 2^33) -> 36 for margin
-//   y_out  : ACC_W - F = 19 bits, so the ~1.6x worst-case gain can't overflow
+//   y_out  : default ACC_W - F = 19 bits, which can't overflow.
+//            Set OUT_W = 16 to keep the output the same size as the input;
+//            then the ~1.6x worst-case gain CAN overflow, and SAT decides what happens.
 //
 // Timing: y_out for sample x[n] appears one clock after x[n] is presented
 // with in_valid high.
@@ -20,8 +23,8 @@ module fir #(
     parameter F         = 17,              // from params.txt
     parameter ACC_W     = 36,
     parameter OUT_W     = ACC_W - F,       // must be <= ACC_W - F
-    parameter ROUND = 0,                   // 0 = truncate, 1 = round half up
-    parameter SAT = 0,                     // 0 = wrap around, 1 = saturate
+    parameter ROUND     = 0,               // 0 = truncate, 1 = round half up
+    parameter SAT       = 0,               // 0 = wrap around, 1 = saturate
     parameter COEF_FILE = "vectors/coeffs.mem"
 )(
     input  wire                     clk,
@@ -32,7 +35,7 @@ module fir #(
     output reg  signed [OUT_W-1:0]  y_out
 );
 
-    localparam SH_W = ACC_W - F; // width left after shift (19)
+    localparam SH_W = ACC_W - F;           // width left after the shift (19)
 
     // Coefficient ROM, loaded from Python's export
     reg signed [B_COEF-1:0] coef [0:N-1];
@@ -52,6 +55,17 @@ module fir #(
             acc = acc + dly[k-1] * coef[k];
     end
 
+    // ---- Rounding --------------------------------------------------------
+    // Shifting right by F rounds DOWN (toward -infinity). Adding half of the
+    // amount being shifted off first turns that into round-to-nearest.
+    localparam [ACC_W-1:0] HALF = ROUND ? ({{(ACC_W-1){1'b0}}, 1'b1} << (F-1))
+                                        : {ACC_W{1'b0}};
+    wire signed [ACC_W-1:0] acc_r = acc + $signed(HALF);
+    wire signed [SH_W-1:0]  sh    = acc_r >>> F;   // upper bits are just sign copies
+
+    // ---- Fit into OUT_W bits ---------------------------------------------
+    // sh fits in OUT_W bits exactly when its top (SH_W - OUT_W + 1) bits are
+    // all 0s (small positive) or all 1s (small negative). Otherwise it overflowed.
     wire [SH_W-OUT_W:0] top  = sh[SH_W-1:OUT_W-1];
     wire                fits = (&top) | ~(|top);
 
@@ -73,7 +87,7 @@ module fir #(
         end else begin
             out_valid <= in_valid;
             if (in_valid) begin
-                y_out  <= acc >>> F;                // acc is signed -> arithmetic shift
+                y_out  <= y_next;
                 dly[0] <= x_in;
                 for (i = 1; i < N-1; i = i + 1)
                     dly[i] <= dly[i-1];

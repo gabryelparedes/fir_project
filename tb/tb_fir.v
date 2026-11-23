@@ -11,14 +11,15 @@
 module tb_fir;
     parameter N_SAMPLES = 1264;      // from params.txt
     parameter OUT_W     = 19;
-    parameter ROUND     = 0;
-    parameter SAT       = 0;
+    parameter ROUND     = 0;         // 0 = truncate, 1 = round half up
+    parameter SAT = 0;               // 0 = wrap around, 1 = saturate
 
     reg                     clk = 0, rst = 1, in_valid = 0;
     reg  signed [15:0]      x_in = 0;
     wire                    out_valid;
     wire signed [OUT_W-1:0] y_out;
 
+    // Setup filter
     fir #(.OUT_W(OUT_W), .ROUND(ROUND), .SAT(SAT)) dut (
         .clk(clk), .rst(rst), .in_valid(in_valid), .x_in(x_in),
         .out_valid(out_valid), .y_out(y_out));
@@ -41,7 +42,7 @@ module tb_fir;
             r = $fscanf(fd, "%d\n", expected[n]);
         $fclose(fd);
 
-        // Hardware outputs go here so Python can compare them too
+        // Hardware outputs go here so Python can compare them 
         fout = $fopen(act_file, "w");
 
         $dumpfile("fir.vcd");
