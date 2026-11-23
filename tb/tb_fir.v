@@ -1,11 +1,3 @@
-// tb_fir.v -- feeds input.mem through fir.v and checks every output
-// against the golden model's expected file. Run from project root.
-//
-// Configuration (set when compiling, e.g. iverilog -Ptb_fir.OUT_W=16 -Ptb_fir.SAT=1 ...):
-//   OUT_W, ROUND, SAT  -> passed straight to fir.v
-// Files (set when running, e.g. vvp sim +EXP=... +ACT=...):
-//   +EXP=<path>  expected outputs  (default vectors/expected.txt)
-//   +ACT=<path>  where to write the hardware's outputs (default vectors/actual.txt)
 `timescale 1ns/1ps
 
 module tb_fir;
