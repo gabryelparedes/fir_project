@@ -1,68 +1,67 @@
 module fir #(
-    parameter N         = 41,
-    parameter B_X       = 16,
-    parameter B_COEF    = 16,
-    parameter F         = 17,              // from params.txt
-    parameter ACC_W     = 36,
-    parameter OUT_W     = ACC_W - F,       // must be <= ACC_W - F
-    parameter ROUND     = 0,               // 0 = truncate, 1 = round half up
-    parameter SAT       = 0,               // 0 = wrap around, 1 = saturate
+    parameter N         = 41, // num taps
+    parameter B_X       = 16, // num bits for x[n]
+    parameter B_COEF    = 16, // num bits for h[k]
+    parameter F         = 17, // coef scale exponent          
+    parameter ACC_W     = 36, // needs 34 bits, +2 margin
+    parameter OUT_W     = ACC_W - F, // bits left after >>> F     
+    parameter ROUND     = 0, // 0 = truncate, 1 = round 
+    parameter SAT       = 0, // 0 = wrap around, 1 = saturate               
     parameter COEF_FILE = "vectors/coeffs.mem"
 )(
     input  wire                     clk,
-    input  wire                     rst,       // synchronous, active high
-    input  wire                     in_valid,
-    input  wire signed [B_X-1:0]    x_in,
-    output reg                      out_valid,
-    output reg  signed [OUT_W-1:0]  y_out
+    input  wire                     rst, // 1 = clear delay line & outputs
+    input  wire                     in_valid, // 1 = sample on x_in
+    input  wire signed [B_X-1:0]    x_in, // input sample, 16 bits
+    output reg                      out_valid, // 1 = y_out is valid
+    output reg  signed [OUT_W-1:0]  y_out  // output sample, OUT_W bits, signed
 );
 
-    localparam SH_W = ACC_W - F;           // width left after the shift (19)
+    localparam SH_W = ACC_W - F; // bits left after >>> F (19)       
 
-    // Coefficient ROM, loaded from Python's export
-    reg signed [B_COEF-1:0] coef [0:N-1];
-    initial $readmemh(COEF_FILE, coef);
+    reg signed [B_COEF-1:0] coef [0:N-1]; // 41 coefficients, 16 bits
+    initial $readmemh(COEF_FILE, coef);// read coeffs.mem
 
-    // Delay line: dly[0] = x[n-1], dly[1] = x[n-2], ..., dly[N-2] = x[n-N+1]
-    reg signed [B_X-1:0] dly [0:N-2];
-
+    reg signed [B_X-1:0] dly [0:N-2]; // stores 40 entries
     integer k;
-    reg signed [ACC_W-1:0] acc;
-    always @* begin
-        acc = x_in * coef[0];                       // k = 0 term uses x[n] itself
-        for (k = 1; k < N; k = k + 1)
-            acc = acc + dly[k-1] * coef[k];
+    reg signed [ACC_W-1:0] acc; // running sum, 36 bits
+    always @* begin // recompute whenever signal changes
+        acc = x_in * coef[0]; // k = 0 term                    
+        for (k = 1; k < N; k = k + 1) // loops 40 times (remaining terms)
+            acc = acc + dly[k-1] * coef[k]; // add x[n-k] * h[k]
     end
 
+    // rounding
     localparam [ACC_W-1:0] HALF = ROUND ? ({{(ACC_W-1){1'b0}}, 1'b1} << (F-1))
                                         : {ACC_W{1'b0}};
-    wire signed [ACC_W-1:0] acc_r = acc + $signed(HALF);
-    wire signed [SH_W-1:0]  sh    = acc_r >>> F;   // upper bits are just sign copies
+    wire signed [ACC_W-1:0] acc_r = acc + $signed(HALF); 
+    wire signed [SH_W-1:0]  sh    = acc_r >>> F; // must be signed
 
-    wire [SH_W-OUT_W:0] top  = sh[SH_W-1:OUT_W-1];
-    wire                fits = (&top) | ~(|top);
+    // overflow check
+    wire [SH_W-OUT_W:0] top  = sh[SH_W-1:OUT_W-1]; // grabs 1st 4 bits
+    wire                fits = (&top) | ~(|top); // all 1's or no 1's
 
-    localparam signed [OUT_W-1:0] MAX_OUT = {1'b0, {(OUT_W-1){1'b1}}};  // 0111...1
-    localparam signed [OUT_W-1:0] MIN_OUT = {1'b1, {(OUT_W-1){1'b0}}};  // 1000...0
+    localparam signed [OUT_W-1:0] MAX_OUT = {1'b0, {(OUT_W-1){1'b1}}}; // max 2's
+    localparam signed [OUT_W-1:0] MIN_OUT = {1'b1, {(OUT_W-1){1'b0}}}; // min 2's
 
     wire signed [OUT_W-1:0] y_next =
-        (!SAT || fits) ? sh[OUT_W-1:0]                 // wrap: keep the low bits
-                       : (sh[SH_W-1] ? MIN_OUT : MAX_OUT);  // clamp, by sign
+        (!SAT || fits) ? sh[OUT_W-1:0]              // if exact keep low bits
+                       : (sh[SH_W-1] ? MIN_OUT : MAX_OUT); // else clamp by sign
 
     integer i;
-    always @(posedge clk) begin
+    always @(posedge clk) begin // run only on rising clock edge
         if (rst) begin
             out_valid <= 1'b0;
             y_out     <= {OUT_W{1'b0}};
             for (i = 0; i < N-1; i = i + 1)
                 dly[i] <= {B_X{1'b0}};
         end else begin
-            out_valid <= in_valid;
-            if (in_valid) begin
-                y_out  <= y_next;
-                dly[0] <= x_in;
+            out_valid <= in_valid; // output is valid 1 clk after valid input
+            if (in_valid) begin // only advance when a real sample arrives
+                y_out  <= y_next; // hold finished result
+                dly[0] <= x_in; // newest sample enters
                 for (i = 1; i < N-1; i = i + 1)
-                    dly[i] <= dly[i-1];
+                    dly[i] <= dly[i-1]; // shift every past sample
             end
         end
     end

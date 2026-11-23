@@ -16,12 +16,12 @@ module tb_fir;
         .clk(clk), .rst(rst), .in_valid(in_valid), .x_in(x_in),
         .out_valid(out_valid), .y_out(y_out));
 
-    always #5 clk = ~clk;   // 100 MHz
+    always #5 clk = ~clk;   
 
     reg signed [15:0] x_mem [0:N_SAMPLES-1];
     integer expected [0:N_SAMPLES-1];
     integer fd, fout, n, r, errors, checked;
-    reg [8*256-1:0] exp_file, act_file;     // file names (Verilog strings are bit vectors)
+    reg [8*256-1:0] exp_file, act_file;     
 
     initial begin
         if (!$value$plusargs("EXP=%s", exp_file)) exp_file = "vectors/expected.txt";
@@ -34,7 +34,6 @@ module tb_fir;
             r = $fscanf(fd, "%d\n", expected[n]);
         $fclose(fd);
 
-        // Hardware outputs go here so Python can compare them 
         fout = $fopen(act_file, "w");
 
         $dumpfile("fir.vcd");
@@ -43,7 +42,6 @@ module tb_fir;
         repeat (2) @(posedge clk);
         rst <= 0;
 
-        // Drive one sample per clock
         for (n = 0; n < N_SAMPLES; n = n + 1) begin
             @(posedge clk);
             x_in     <= x_mem[n];
@@ -64,11 +62,10 @@ module tb_fir;
         $finish;
     end
 
-    // Checker: outputs come out in order, one per valid cycle
     initial begin errors = 0; checked = 0; end
     always @(posedge clk) begin
         if (out_valid) begin
-            $fdisplay(fout, "%0d", y_out);   // signed decimal, one per line
+            $fdisplay(fout, "%0d", y_out);   
             if (y_out !== expected[checked]) begin
                 errors = errors + 1;
                 if (errors <= 10)
